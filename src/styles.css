@@ -136,6 +136,7 @@ h4 {
   gap: 16px;
   align-items: start;
   margin-bottom: 16px;
+  padding: 20px 4px 6px;
 }
 
 .hero-copy-block {
@@ -164,9 +165,9 @@ h4 {
 }
 
 .hero-copy-block h1 {
-  font-size: clamp(2.4rem, 4.2vw, 4.4rem);
-  line-height: 0.94;
-  max-width: 12ch;
+  font-size: clamp(2.3rem, 4vw, 4rem);
+  line-height: 1;
+  max-width: 15ch;
 }
 
 .hero-subtitle {
@@ -747,17 +748,19 @@ input[type="range"] {
 
 .bottom-nav {
   position: sticky;
-  bottom: 12px;
+  top: 8px;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
-  margin-top: 16px;
+  margin-top: 0;
+  margin-bottom: 16px;
   padding: 10px;
   border-radius: 24px;
   background: rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(18px);
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
+  z-index: 10;
 }
 
 .nav-item {
@@ -776,6 +779,7 @@ input[type="range"] {
   background: rgba(47, 122, 112, 0.11);
   color: var(--accent-strong);
   border-color: rgba(47, 122, 112, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(47, 122, 112, 0.08);
 }
 
 .toast {
@@ -836,7 +840,27 @@ input[type="range"] {
   }
 
   .bottom-nav {
-    bottom: 8px;
+    top: 8px;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 4px;
+    padding: 6px;
+    border-radius: 20px;
+  }
+
+  .nav-item {
+    min-height: 60px;
+    gap: 5px;
+    padding: 6px 2px;
+    border-radius: 14px;
+    font-size: 0.7rem;
+  }
+
+  .topbar {
+    padding-top: 12px;
+  }
+
+  .status-note {
+    display: none;
   }
 
   .panel h3,

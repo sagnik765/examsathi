@@ -4,7 +4,12 @@ import "@testing-library/jest-dom/vitest";
 import userEvent from "@testing-library/user-event";
 import { cleanup, render, screen } from "@testing-library/react";
 import { App, resetPersistentStore } from "./App.jsx";
-import { analyzeWellness, createSeedEntries, getSupportState } from "./lib/wellness.js";
+import {
+  analyzeWellness,
+  buildSaathiReply,
+  createSeedEntries,
+  getSupportState,
+} from "./lib/wellness.js";
 
 afterEach(() => {
   cleanup();
@@ -23,6 +28,16 @@ describe("wellness analysis", () => {
 });
 
 describe("App interactions", () => {
+  it("switches between screens without leaving the app static", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getAllByRole("button", { name: /^community$/i })[0]);
+
+    expect(screen.getByText(/connect with students for the same exam/i)).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /^safety$/i }).length).toBeGreaterThan(0);
+  });
+
   it("sends a grounded Saathi reply from the live chat", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -33,7 +48,7 @@ describe("App interactions", () => {
     );
     await user.click(screen.getByRole("button", { name: /send to saathi/i }));
 
-    expect(screen.getByText(/comparison appears/i)).toBeInTheDocument();
+    expect(screen.getByText(/comparison shows up/i)).toBeInTheDocument();
     expect(screen.getByText(/average sleep/i)).toBeInTheDocument();
   });
 
@@ -41,6 +56,7 @@ describe("App interactions", () => {
     const user = userEvent.setup();
     render(<App />);
 
+    await user.click(screen.getAllByRole("button", { name: /^check-in$/i })[0]);
     await user.clear(screen.getByLabelText(/^date$/i));
     await user.type(screen.getByLabelText(/^date$/i), "2026-06-27");
     await user.clear(screen.getByLabelText(/what happened today/i));
@@ -61,10 +77,28 @@ describe("App interactions", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(screen.getAllByRole("button", { name: /^connect$/i })[0]);
+    await user.click(screen.getAllByRole("button", { name: /^community$/i })[0]);
     await user.click(screen.getAllByRole("button", { name: /join circle/i })[0]);
 
-    expect(screen.getByText(/queued/i)).toBeInTheDocument();
+    expect(screen.getByText(/peer circle request added/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^safety$/i }));
     expect(screen.getByText(/peer support requested/i)).toBeInTheDocument();
+  });
+
+  it("avoids repeating the same sleep advice when the user pushes back", () => {
+    const analysis = analyzeWellness(createSeedEntries());
+    const first = buildSaathiReply(
+      "I feel behind after the mock and I keep sleeping late.",
+      analysis,
+      [],
+    );
+    const second = buildSaathiReply(
+      "What good will sleeping at 12:30 do if I cannot concentrate anyway?",
+      analysis,
+      [{ role: "assistant", ...first }],
+    );
+
+    expect(second.text).toMatch(/concentration/i);
+    expect(second.text).not.toMatch(/12:30/);
   });
 });

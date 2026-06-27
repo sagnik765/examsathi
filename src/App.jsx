@@ -33,11 +33,36 @@ const STORAGE_KEYS = {
   requests: "examsathi.requests",
 };
 
-const VIEW_TABS = [
-  { id: "today", label: "Today" },
-  { id: "patterns", label: "Patterns" },
-  { id: "connect", label: "Connect" },
+const VIEW_SCREENS = [
+  { id: "home", label: "Home" },
+  { id: "checkin", label: "Check-in" },
+  { id: "insights", label: "Insights" },
+  { id: "community", label: "Community" },
+  { id: "safety", label: "Safety" },
 ];
+
+const SCREEN_COPY = {
+  home: {
+    title: "How are you, really?",
+    subtitle: "Talk it through privately. Saathi responds using your own check-ins and recent conversation—not invented patterns.",
+  },
+  checkin: {
+    title: "A two-minute check-in.",
+    subtitle: "Capture sleep, stress, mood, and what happened. Every saved entry updates your patterns immediately.",
+  },
+  insights: {
+    title: "See patterns, not verdicts.",
+    subtitle: "Understand when stress rose, what appeared around it, and which next step is supported by your logs.",
+  },
+  community: {
+    title: "Support beyond the screen.",
+    subtitle: "Find students preparing for the same exam or request a confidential conversation with a therapist.",
+  },
+  safety: {
+    title: "When patterns persist, support steps in.",
+    subtitle: "Review the 3-day warning and 7-day critical pathway, then choose what gets shared and with whom.",
+  },
+};
 
 const inMemoryStorage = new Map();
 
@@ -60,6 +85,15 @@ const MOOD_OPTIONS = [
   "Overloaded",
   "Recovering",
 ];
+
+function getInitialScreen() {
+  if (typeof window === "undefined") {
+    return "home";
+  }
+
+  const hash = window.location.hash.replace("#", "").toLowerCase();
+  return VIEW_SCREENS.some((screen) => screen.id === hash) ? hash : "home";
+}
 
 const createId = (prefix) =>
   `${prefix}-${typeof crypto !== "undefined" && crypto.randomUUID
@@ -179,7 +213,7 @@ export function App() {
     STORAGE_KEYS.requests,
     createSeedRequests,
   );
-  const [activeView, setActiveView] = useState("today");
+  const [activeScreen, setActiveScreen] = useState(getInitialScreen);
   const [toast, setToast] = useState("");
   const [chatInput, setChatInput] = useState("");
   const [journalForm, setJournalForm] = useState(INITIAL_JOURNAL_FORM);
@@ -187,6 +221,19 @@ export function App() {
   const [peerNote, setPeerNote] = useState("");
   const [therapistNote, setTherapistNote] = useState("");
   const chatEndRef = useRef(null);
+
+  useEffect(() => {
+    const handleHashChange = () => setActiveScreen(getInitialScreen());
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
+
+  function navigateToScreen(screen) {
+    setActiveScreen(screen);
+    if (typeof window !== "undefined") {
+      window.location.hash = screen;
+    }
+  }
 
   const analysis = useMemo(() => analyzeWellness(entries), [entries]);
   const supportState = useMemo(() => getSupportState(analysis), [analysis]);
@@ -239,7 +286,7 @@ export function App() {
 
     const assistantMessage = {
       id: createId("msg"),
-      ...buildSaathiReply(text, analysis),
+      ...buildSaathiReply(text, analysis, messages),
       createdAt: "now",
     };
 
@@ -275,7 +322,7 @@ export function App() {
     const entry = createJournalEntry(journalForm);
     const nextEntries = [entry, ...entries];
     const nextAnalysis = analyzeWellness(nextEntries);
-    const assistantReply = buildSaathiReply(entry.note, nextAnalysis);
+    const assistantReply = buildSaathiReply(entry.note, nextAnalysis, messages);
 
     setEntries(nextEntries);
     setMessages((current) => [
@@ -397,15 +444,36 @@ export function App() {
       </section>
 
       <div className="app-frame">
+        <nav className="bottom-nav top-nav" aria-label="Primary navigation">
+          {VIEW_SCREENS.map((screen) => {
+            const Icon = {
+              home: House,
+              checkin: Heart,
+              insights: ChartLine,
+              community: Users,
+              safety: WarningCircle,
+            }[screen.id];
+
+            return (
+              <button
+                key={screen.id}
+                type="button"
+                className={`nav-item ${activeScreen === screen.id ? "active" : ""}`}
+                onClick={() => navigateToScreen(screen.id)}
+                aria-current={activeScreen === screen.id ? "page" : undefined}
+              >
+                <Icon size={20} />
+                <span>{screen.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+
         <header className="topbar">
           <div className="hero-copy-block">
             <p className="eyebrow">ExamSathi</p>
-            <h1>Calm, grounded support for exam pressure that reacts to real input.</h1>
-            <p className="hero-subtitle">
-              One page. Real check-ins. No invented patterns. The app uses your journal
-              logs to power Saathi, the weekly summary, and the parent / therapist
-              escalation flow.
-            </p>
+            <h1>{SCREEN_COPY[activeScreen].title}</h1>
+            <p className="hero-subtitle">{SCREEN_COPY[activeScreen].subtitle}</p>
           </div>
 
           <div className="status-stack">
@@ -421,21 +489,7 @@ export function App() {
           </div>
         </header>
 
-        <nav className="tabbar" aria-label="ExamSathi sections">
-          {VIEW_TABS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              className={`tab-button ${activeView === tab.id ? "active" : ""}`}
-              onClick={() => setActiveView(tab.id)}
-              aria-pressed={activeView === tab.id}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-
-        <section className="hero-card">
+        {activeScreen === "home" ? <section className="hero-card">
           <div className="assistant-card">
             <div className="assistant-head">
               <div>
@@ -544,9 +598,9 @@ export function App() {
               </div>
             </div>
           </div>
-        </section>
+        </section> : null}
 
-        {activeView === "today" ? (
+        {activeScreen === "checkin" ? (
           <section className="dashboard-grid">
             <Panel
               eyebrow="Daily check-in"
@@ -654,7 +708,11 @@ export function App() {
                     Save check-in
                     <ArrowRight size={16} />
                   </button>
-                  <button type="button" className="secondary-button" onClick={() => setActiveView("patterns")}>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => navigateToScreen("insights")}
+                  >
                     Review patterns
                   </button>
                 </div>
@@ -679,7 +737,7 @@ export function App() {
           </section>
         ) : null}
 
-        {activeView === "patterns" ? (
+        {activeScreen === "insights" ? (
           <section className="dashboard-grid">
             <Panel
               eyebrow="Weekly insight"
@@ -742,35 +800,8 @@ export function App() {
           </section>
         ) : null}
 
-        {activeView === "connect" ? (
+        {activeScreen === "community" ? (
           <section className="dashboard-grid">
-            <Panel
-              eyebrow="Safety routing"
-              title="Parent warning and escalation"
-              icon={<WarningCircle size={22} />}
-            >
-              <div className="warning-card">
-                <p className="warning-title">{supportState.label}</p>
-                <p>{supportState.message}</p>
-              </div>
-
-              <div className="status-row">
-                <div>
-                  <span>Issue streak</span>
-                  <strong>{formatCounter(analysis.issueStreak, "day")}</strong>
-                </div>
-                <div>
-                  <span>Requests</span>
-                  <strong>{requestCount}</strong>
-                </div>
-              </div>
-
-              <button type="button" className="ghost-button" onClick={handleSendParentAlert}>
-                Queue parent alert
-                <ArrowRight size={16} />
-              </button>
-            </Panel>
-
             <Panel
               eyebrow="Peer support"
               title="Connect with students for the same exam"
@@ -837,11 +868,43 @@ export function App() {
                 Request therapist connect
               </button>
             </Panel>
+          </section>
+        ) : null}
+
+        {activeScreen === "safety" ? (
+          <section className="dashboard-grid">
+            <Panel
+              eyebrow="Safety routing"
+              title="Parent warning and escalation"
+              icon={<WarningCircle size={22} />}
+            >
+              <div className="warning-card">
+                <p className="warning-title">{supportState.label}</p>
+                <p>{supportState.message}</p>
+              </div>
+
+              <div className="status-row">
+                <div>
+                  <span>Issue streak</span>
+                  <strong>{formatCounter(analysis.issueStreak, "day")}</strong>
+                </div>
+                <div>
+                  <span>Requests</span>
+                  <strong>{requestCount}</strong>
+                </div>
+              </div>
+
+              <button type="button" className="ghost-button" onClick={handleSendParentAlert}>
+                Queue parent alert
+                <ArrowRight size={16} />
+              </button>
+            </Panel>
 
             <Panel
               eyebrow="Support queue"
               title="Requests and follow-ups"
               icon={<PhoneCall size={22} />}
+              className="panel-wide"
             >
               <div className="entry-list compact">
                 {requests.length ? (
@@ -864,32 +927,6 @@ export function App() {
           </section>
         ) : null}
 
-        <footer className="bottom-nav" aria-label="Primary navigation">
-          <button
-            type="button"
-            className={`nav-item ${activeView === "today" ? "active" : ""}`}
-            onClick={() => setActiveView("today")}
-          >
-            <House size={20} />
-            <span>Today</span>
-          </button>
-          <button
-            type="button"
-            className={`nav-item ${activeView === "patterns" ? "active" : ""}`}
-            onClick={() => setActiveView("patterns")}
-          >
-            <ChartLine size={20} />
-            <span>Patterns</span>
-          </button>
-          <button
-            type="button"
-            className={`nav-item ${activeView === "connect" ? "active" : ""}`}
-            onClick={() => setActiveView("connect")}
-          >
-            <Users size={20} />
-            <span>Connect</span>
-          </button>
-        </footer>
       </div>
 
       {toast ? <div className="toast">{toast}</div> : null}
@@ -899,6 +936,9 @@ export function App() {
 
 export function resetPersistentStore() {
   inMemoryStorage.clear();
+  if (typeof window !== "undefined") {
+    window.location.hash = "";
+  }
 }
 
 function LockIcon() {
