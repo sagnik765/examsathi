@@ -1,10 +1,10 @@
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
   ChartLine,
   ChatCircle,
   Heart,
   House,
-  Lock,
   MoonStars,
   PhoneCall,
   ShieldCheck,
@@ -12,363 +12,899 @@ import {
   Users,
   WarningCircle,
 } from "@phosphor-icons/react";
+import {
+  INITIAL_PROFILE,
+  PEER_CIRCLES,
+  analyzeWellness,
+  buildSaathiReply,
+  createJournalEntry,
+  createSeedEntries,
+  createSeedMessages,
+  createSeedRequests,
+  formatDateRange,
+  getSupportState,
+  getTimeWindowSeries,
+  summarizeEntry,
+} from "./lib/wellness";
 
-const student = {
-  name: "Aarav",
-  exam: "JEE Main",
-  daysToExam: 18,
-  streak: 9,
-  mood: "3.8/5",
+const STORAGE_KEYS = {
+  entries: "examsathi.entries",
+  messages: "examsathi.messages",
+  requests: "examsathi.requests",
 };
 
-const dailySignals = [
-  { day: "Mon", stress: 42, sleep: 7.2 },
-  { day: "Tue", stress: 55, sleep: 6.4 },
-  { day: "Wed", stress: 61, sleep: 5.9 },
-  { day: "Thu", stress: 68, sleep: 5.3 },
-  { day: "Fri", stress: 73, sleep: 5.1 },
-  { day: "Sat", stress: 64, sleep: 5.8 },
-  { day: "Sun", stress: 59, sleep: 6.1 },
+const VIEW_TABS = [
+  { id: "today", label: "Today" },
+  { id: "patterns", label: "Patterns" },
+  { id: "connect", label: "Connect" },
 ];
 
-const insightSignals = [
-  {
-    label: "Comparison loop",
-    value: "4 triggers this week",
-    detail: "Stress rises after late-night peer comparisons.",
-  },
-  {
-    label: "Late study",
-    value: "2:10 AM average",
-    detail: "Study sessions extend 1.4 hours on comparison-heavy days.",
-  },
-  {
-    label: "Sleep debt",
-    value: "5h 25m avg",
-    detail: "Three consecutive short-sleep nights push stress upward.",
-  },
+const inMemoryStorage = new Map();
+
+const INITIAL_JOURNAL_FORM = {
+  date: new Date().toISOString().slice(0, 10),
+  checkInTime: "20:30",
+  stress: "3",
+  sleepHours: "6.5",
+  mood: "Steady",
+  studyTime: "21:00",
+  note: "",
+};
+
+const MOOD_OPTIONS = [
+  "Calm",
+  "Steady",
+  "Tense",
+  "Worried",
+  "Drained",
+  "Overloaded",
+  "Recovering",
 ];
 
-const communityCards = [
-  {
-    title: "Same-exam group",
-    body: "Join a small, moderated study pod for JEE Main aspirants in your zone.",
-    meta: "12 active peers",
-  },
-  {
-    title: "Therapist connect",
-    body: "Book a short confidential session with a licensed therapist when the load gets heavy.",
-    meta: "Available today",
-  },
-];
+const createId = (prefix) =>
+  `${prefix}-${typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2, 10)}`;
 
-const copingActions = [
-  "Reset Breath",
-  "2-minute focus reset",
-  "Sleep wind-down",
-  "Reach out safely",
-];
+function readStoredValue(key, fallbackFactory) {
+  const storage = getStorage();
 
-const weeklySummary = [
-  "Stress climbed most between 9:30 PM and 1:00 AM.",
-  "Main cause: comparison after mock tests and a fear of falling behind.",
-  "Best mitigation: set a hard stop, sleep before 12:30 AM, and switch to a 10-minute reset.",
-];
-
-export function getSupportState({ poorSleepDays = 4, highStressDays = 5 } = {}) {
-  if (poorSleepDays >= 7 || highStressDays >= 7) {
-    return {
-      tone: "critical",
-      label: "Critical warning",
-      message:
-        "Poor sleep and stress have stayed elevated for 7 days. A trusted adult should be looped in now.",
-    };
+  try {
+    const stored = storage.getItem(key);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch {
+    // Ignore storage errors and fall back to seeded data.
   }
 
-  if (poorSleepDays >= 3 || highStressDays >= 3) {
-    return {
-      tone: "warning",
-      label: "Warning",
-      message:
-        "Stress and sleep look concerning for more than 3 days. A parent notification is recommended.",
-    };
+  return typeof fallbackFactory === "function" ? fallbackFactory() : fallbackFactory;
+}
+
+function getStorage() {
+  if (typeof window !== "undefined") {
+    const storage = window.localStorage;
+    if (
+      storage &&
+      typeof storage.getItem === "function" &&
+      typeof storage.setItem === "function" &&
+      typeof storage.removeItem === "function"
+    ) {
+      return storage;
+    }
   }
 
   return {
-    tone: "normal",
-    label: "Stable",
-    message: "Signals are within a manageable range today.",
+    getItem(key) {
+      return inMemoryStorage.has(key) ? inMemoryStorage.get(key) : null;
+    },
+    setItem(key, value) {
+      inMemoryStorage.set(key, value);
+    },
+    removeItem(key) {
+      inMemoryStorage.delete(key);
+    },
   };
 }
 
-const supportState = getSupportState();
+function usePersistentState(key, fallbackFactory) {
+  const [value, setValue] = useState(() => readStoredValue(key, fallbackFactory));
+
+  useEffect(() => {
+    try {
+      getStorage().setItem(key, JSON.stringify(value));
+    } catch {
+      // Ignore write failures; the app still works in memory.
+    }
+  }, [key, value]);
+
+  return [value, setValue];
+}
+
+function formatHours(value) {
+  return `${Number(value).toFixed(1)}h`;
+}
+
+function formatCounter(count, noun) {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+function ChatMessage({ role, text, createdAt }) {
+  return (
+    <div className={`chat-message ${role}`}>
+      <div className="chat-meta">
+        <strong>{role === "assistant" ? "Saathi" : "You"}</strong>
+        <span>{createdAt}</span>
+      </div>
+      <p>{text}</p>
+    </div>
+  );
+}
+
+function MetricCard({ label, value, subtext }) {
+  return (
+    <article className="metric-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <p>{subtext}</p>
+    </article>
+  );
+}
+
+function Panel({ eyebrow, title, icon, children, className = "" }) {
+  return (
+    <article className={`panel ${className}`.trim()}>
+      <div className="panel-head">
+        <div>
+          <p className="eyebrow">{eyebrow}</p>
+          <h3>{title}</h3>
+        </div>
+        {icon}
+      </div>
+      {children}
+    </article>
+  );
+}
 
 export function App() {
+  const [entries, setEntries] = usePersistentState(
+    STORAGE_KEYS.entries,
+    createSeedEntries,
+  );
+  const [messages, setMessages] = usePersistentState(
+    STORAGE_KEYS.messages,
+    createSeedMessages,
+  );
+  const [requests, setRequests] = usePersistentState(
+    STORAGE_KEYS.requests,
+    createSeedRequests,
+  );
+  const [activeView, setActiveView] = useState("today");
+  const [toast, setToast] = useState("");
+  const [chatInput, setChatInput] = useState("");
+  const [journalForm, setJournalForm] = useState(INITIAL_JOURNAL_FORM);
+  const [peerExam, setPeerExam] = useState(INITIAL_PROFILE.exam);
+  const [peerNote, setPeerNote] = useState("");
+  const [therapistNote, setTherapistNote] = useState("");
+  const chatEndRef = useRef(null);
+
+  const analysis = useMemo(() => analyzeWellness(entries), [entries]);
+  const supportState = useMemo(() => getSupportState(analysis), [analysis]);
+  const timeline = useMemo(() => getTimeWindowSeries(analysis.recent), [analysis.recent]);
+  const peerExamOptions = useMemo(
+    () => ["All exams", ...new Set(PEER_CIRCLES.map((circle) => circle.exam))],
+    [],
+  );
+  const visiblePeerCircles =
+    peerExam === "All exams"
+      ? PEER_CIRCLES
+      : PEER_CIRCLES.filter((circle) => circle.exam === peerExam);
+  const latestEntry = useMemo(() => {
+    if (!entries.length) {
+      return null;
+    }
+
+    return [...entries].sort((left, right) => new Date(left.date) - new Date(right.date)).at(-1);
+  }, [entries]);
+
+  useEffect(() => {
+    if (chatEndRef.current && typeof chatEndRef.current.scrollIntoView === "function") {
+      chatEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+  }, [messages]);
+
+  useEffect(() => {
+    if (!toast) {
+      return undefined;
+    }
+
+    const timeout = window.setTimeout(() => setToast(""), 2800);
+    return () => window.clearTimeout(timeout);
+  }, [toast]);
+
+  function showToast(message) {
+    setToast(message);
+  }
+
+  function appendChatMessage(text) {
+    const userMessage = {
+      id: createId("msg"),
+      role: "user",
+      text,
+      createdAt: new Date().toLocaleTimeString("en-IN", {
+        hour: "numeric",
+        minute: "2-digit",
+      }),
+    };
+
+    const assistantMessage = {
+      id: createId("msg"),
+      ...buildSaathiReply(text, analysis),
+      createdAt: "now",
+    };
+
+    setMessages((current) => [...current, userMessage, assistantMessage]);
+  }
+
+  function handleChatSubmit(event) {
+    event.preventDefault();
+    const value = chatInput.trim();
+    if (!value) {
+      return;
+    }
+
+    appendChatMessage(value);
+    setChatInput("");
+    showToast("Saathi responded with an evidence-based reply.");
+  }
+
+  function handleQuickPrompt(prompt) {
+    setChatInput(prompt);
+    appendChatMessage(prompt);
+    setChatInput("");
+  }
+
+  function handleJournalSubmit(event) {
+    event.preventDefault();
+
+    if (!journalForm.note.trim()) {
+      showToast("Please add a short note before saving the check-in.");
+      return;
+    }
+
+    const entry = createJournalEntry(journalForm);
+    const nextEntries = [entry, ...entries];
+    const nextAnalysis = analyzeWellness(nextEntries);
+    const assistantReply = buildSaathiReply(entry.note, nextAnalysis);
+
+    setEntries(nextEntries);
+    setMessages((current) => [
+      ...current,
+      {
+        id: createId("msg"),
+        role: "user",
+        text: `Saved a ${entry.mood.toLowerCase()} check-in for ${entry.date}.`,
+        createdAt: "now",
+      },
+      {
+        id: createId("msg"),
+        ...assistantReply,
+        createdAt: "now",
+      },
+    ]);
+    setJournalForm({
+      ...INITIAL_JOURNAL_FORM,
+      date: new Date().toISOString().slice(0, 10),
+    });
+    showToast("Check-in saved and patterns updated.");
+  }
+
+  function handleSendParentAlert() {
+    const alertRequest = {
+      id: createId("request"),
+      type: "parent",
+      title: supportState.label,
+      detail: supportState.message,
+      status: "Queued",
+      createdAt: new Date().toLocaleTimeString("en-IN", {
+        hour: "numeric",
+        minute: "2-digit",
+      }),
+    };
+
+    setRequests((current) => [alertRequest, ...current]);
+    showToast("Parent alert queued in the support log.");
+  }
+
+  function handlePeerConnect(circle) {
+    const request = {
+      id: createId("request"),
+      type: "peer",
+      title: circle.title,
+      detail: `${circle.exam} · ${peerNote || "Peer support requested"}`,
+      status: "Queued",
+      createdAt: new Date().toLocaleTimeString("en-IN", {
+        hour: "numeric",
+        minute: "2-digit",
+      }),
+    };
+
+    setRequests((current) => [request, ...current]);
+    setPeerNote("");
+    showToast(`Peer circle request added for ${circle.exam}.`);
+  }
+
+  function handleTherapistConnect() {
+    const request = {
+      id: createId("request"),
+      type: "therapist",
+      title: "Therapist connect",
+      detail: therapistNote || "Confidential session requested.",
+      status: "Queued",
+      createdAt: new Date().toLocaleTimeString("en-IN", {
+        hour: "numeric",
+        minute: "2-digit",
+      }),
+    };
+
+    setRequests((current) => [request, ...current]);
+    setTherapistNote("");
+    showToast("Therapist request added to the support queue.");
+  }
+
+  function resetDemoData() {
+    setEntries(createSeedEntries());
+    setMessages(createSeedMessages());
+    setRequests(createSeedRequests());
+    setJournalForm(INITIAL_JOURNAL_FORM);
+    setChatInput("");
+    setPeerNote("");
+    setTherapistNote("");
+    showToast("Demo data reset.");
+  }
+
+  const requestCount = requests.length;
+  const flags = [
+    {
+      label: "Avg stress",
+      value: `${analysis.avgStress.toFixed(1)}/5`,
+      subtext: "From the last 7 entries",
+    },
+    {
+      label: "Avg sleep",
+      value: formatHours(analysis.avgSleep),
+      subtext: "Based on self-reported sleep",
+    },
+    {
+      label: "Issue streak",
+      value: formatCounter(analysis.issueStreak, "day"),
+      subtext: "Consecutive poor-signal days",
+    },
+    {
+      label: "Top trigger",
+      value: analysis.topTriggerLabel || "None yet",
+      subtext: "Most repeated pattern",
+    },
+  ];
+
   return (
     <main className="app-shell">
       <section className="backdrop" aria-hidden="true">
         <div className="orb orb-a" />
         <div className="orb orb-b" />
+        <div className="orb orb-c" />
         <div className="grid-mask" />
       </section>
 
       <div className="app-frame">
         <header className="topbar">
-          <div>
+          <div className="hero-copy-block">
             <p className="eyebrow">ExamSathi</p>
-            <h1>
-              Intimate support for exam pressure, with patterns the student can
-              actually act on.
-            </h1>
+            <h1>Calm, grounded support for exam pressure that reacts to real input.</h1>
+            <p className="hero-subtitle">
+              One page. Real check-ins. No invented patterns. The app uses your journal
+              logs to power Saathi, the weekly summary, and the parent / therapist
+              escalation flow.
+            </p>
           </div>
-          <div className={`alert-pill ${supportState.tone}`}>
-            <WarningCircle size={18} weight="fill" />
-            <span>{supportState.label}</span>
+
+          <div className="status-stack">
+            <div className={`alert-pill ${supportState.tone}`}>
+              <WarningCircle size={18} weight="fill" />
+              <span>{supportState.label}</span>
+            </div>
+            <div className="status-note">{supportState.message}</div>
+            <button type="button" className="ghost-button compact" onClick={resetDemoData}>
+              Reset demo
+              <ArrowRight size={16} />
+            </button>
           </div>
         </header>
 
-        <section className="hero-card">
-          <div className="hero-copy">
-            <p className="subtle">Today</p>
-            <h2>
-              “What’s taking up the most space in your mind right now?”
-            </h2>
-            <p>
-              A calm, conversation-led companion that listens first, then
-              explains what the data is showing about comparison, late study,
-              and sleep loss.
-            </p>
-            <div className="chip-row" aria-label="Quick prompts">
-              <button type="button" className="chip chip-active">
-                Before a mock
-              </button>
-              <button type="button" className="chip">
-                Feeling behind
-              </button>
-              <button type="button" className="chip">
-                Can’t sleep
-              </button>
-            </div>
-          </div>
+        <nav className="tabbar" aria-label="ExamSathi sections">
+          {VIEW_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className={`tab-button ${activeView === tab.id ? "active" : ""}`}
+              onClick={() => setActiveView(tab.id)}
+              aria-pressed={activeView === tab.id}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
 
-          <div className="assistant-card" aria-label="Conversation preview">
+        <section className="hero-card">
+          <div className="assistant-card">
             <div className="assistant-head">
               <div>
                 <p className="assistant-name">Saathi</p>
                 <p className="assistant-meta">
-                  Always available, private, and non-judgmental
+                  Private, conversation-led, and grounded in the student’s own data
                 </p>
               </div>
-              <Lock size={18} />
+              <LockIcon />
             </div>
 
-            <div className="assistant-bubble">
-              I noticed a pattern, Aarav. On days comparison shows up, you tend
-              to study later, and your sleep drops. Want to break that loop
-              together?
-            </div>
-
-            <div className="support-row">
-              {copingActions.map((action) => (
-                <button key={action} type="button" className="support-button">
-                  {action}
-                </button>
+            <div className="chat-thread" aria-live="polite">
+              {messages.slice(-5).map((message) => (
+                <ChatMessage
+                  key={message.id}
+                  role={message.role}
+                  text={message.text}
+                  createdAt={message.createdAt}
+                />
               ))}
+              <div ref={chatEndRef} />
+            </div>
+
+            <form className="chat-composer" onSubmit={handleChatSubmit}>
+              <label className="field">
+                <span>Talk to Saathi</span>
+                <textarea
+                  rows="3"
+                  value={chatInput}
+                  onChange={(event) => setChatInput(event.target.value)}
+                  placeholder="Tell me what feels heavy today..."
+                />
+              </label>
+
+              <div className="quick-prompts" aria-label="Quick prompts">
+                {[
+                  "Before a mock",
+                  "I feel behind",
+                  "I stayed up late",
+                  "I cannot focus",
+                ].map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    className="prompt-chip"
+                    onClick={() => handleQuickPrompt(prompt)}
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+
+              <button type="submit" className="primary-button">
+                Send to Saathi
+                <ArrowRight size={16} />
+              </button>
+            </form>
+          </div>
+
+          <div className="hero-side">
+            <div className="metric-grid">
+              {flags.map((flag) => (
+                <MetricCard key={flag.label} {...flag} />
+              ))}
+            </div>
+
+            <div className="support-banner">
+              <div>
+                <p className="eyebrow">Evidence-only summary</p>
+                <h2>
+                  {analysis.topTriggerLabel
+                    ? `The strongest pattern right now is ${analysis.topTriggerLabel.toLowerCase()}.`
+                    : "No repeating pattern yet."}
+                </h2>
+                <p>
+                  Analysis window: {formatDateRange(analysis.recent)}. The weekly update and
+                  Saathi replies are generated only from those logs.
+                </p>
+                <p className="support-banner-note">
+                  Latest log: {latestEntry ? summarizeEntry(latestEntry) : "No check-in yet."}
+                </p>
+              </div>
+              <MoonStars size={24} />
+            </div>
+
+            <div className="signal-card">
+              <div className="card-head">
+                <div>
+                  <p className="eyebrow">Signals</p>
+                  <h3>Stress and sleep trend</h3>
+                </div>
+                <ChartLine size={22} />
+              </div>
+
+              <div className="signal-bars" role="img" aria-label="Stress and sleep trend for the last seven logs">
+                {timeline.map((item) => (
+                  <div key={item.id} className="signal-day">
+                    <div className="bars">
+                      <span className="bar stress" style={{ height: `${item.stress * 16}%` }} />
+                      <span className="bar sleep" style={{ height: `${item.sleep * 12}%` }} />
+                    </div>
+                    <span>{item.day}</span>
+                    <small>{item.timeWindow}</small>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </section>
 
-        <section className="dashboard-grid">
-          <article className="panel panel-tall">
-            <div className="panel-head">
-              <div>
-                <p className="subtle">Wellness signals</p>
-                <h3>What the tracker sees</h3>
-              </div>
-              <ChartLine size={22} />
-            </div>
-
-            <div className="signal-bars" role="img" aria-label="Stress and sleep trend for the week">
-              {dailySignals.map((item) => (
-                <div key={item.day} className="signal-day">
-                  <div className="bars">
-                    <span
-                      className="bar stress"
-                      style={{ height: `${item.stress}%` }}
+        {activeView === "today" ? (
+          <section className="dashboard-grid">
+            <Panel
+              eyebrow="Daily check-in"
+              title="Save a new journal entry"
+              icon={<Heart size={22} />}
+              className="panel-wide"
+            >
+              <form className="journal-form" onSubmit={handleJournalSubmit}>
+                <div className="form-grid">
+                  <label className="field">
+                    <span>Date</span>
+                    <input
+                      type="date"
+                      value={journalForm.date}
+                      onChange={(event) =>
+                        setJournalForm((current) => ({ ...current, date: event.target.value }))
+                      }
                     />
-                    <span
-                      className="bar sleep"
-                      style={{ height: `${item.sleep * 10}%` }}
+                  </label>
+
+                  <label className="field">
+                    <span>Check-in time</span>
+                    <input
+                      type="time"
+                      value={journalForm.checkInTime}
+                      onChange={(event) =>
+                        setJournalForm((current) => ({
+                          ...current,
+                          checkInTime: event.target.value,
+                        }))
+                      }
                     />
+                  </label>
+
+                  <label className="field">
+                    <span>Stress level</span>
+                    <input
+                      type="range"
+                      min="1"
+                      max="5"
+                      value={journalForm.stress}
+                      onChange={(event) =>
+                        setJournalForm((current) => ({ ...current, stress: event.target.value }))
+                      }
+                    />
+                    <strong>{journalForm.stress}/5</strong>
+                  </label>
+
+                  <label className="field">
+                    <span>Sleep last night</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={journalForm.sleepHours}
+                      onChange={(event) =>
+                        setJournalForm((current) => ({
+                          ...current,
+                          sleepHours: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Study time</span>
+                    <input
+                      type="time"
+                      value={journalForm.studyTime}
+                      onChange={(event) =>
+                        setJournalForm((current) => ({ ...current, studyTime: event.target.value }))
+                      }
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Mood</span>
+                    <select
+                      value={journalForm.mood}
+                      onChange={(event) =>
+                        setJournalForm((current) => ({ ...current, mood: event.target.value }))
+                      }
+                    >
+                      {MOOD_OPTIONS.map((mood) => (
+                        <option key={mood}>{mood}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <label className="field">
+                  <span>What happened today?</span>
+                  <textarea
+                    rows="4"
+                    value={journalForm.note}
+                    onChange={(event) =>
+                      setJournalForm((current) => ({ ...current, note: event.target.value }))
+                    }
+                    placeholder="Example: Compared mock scores, stayed up late, then felt tired this morning."
+                  />
+                </label>
+
+                <div className="form-actions">
+                  <button type="submit" className="primary-button">
+                    Save check-in
+                    <ArrowRight size={16} />
+                  </button>
+                  <button type="button" className="secondary-button" onClick={() => setActiveView("patterns")}>
+                    Review patterns
+                  </button>
+                </div>
+              </form>
+            </Panel>
+
+            <Panel
+              eyebrow="Recent logs"
+              title="What has been saved"
+              icon={<ChatCircle size={22} />}
+            >
+              <div className="entry-list">
+                {entries.slice(0, 4).map((entry) => (
+                  <div key={entry.id} className="entry-card">
+                    <strong>{entry.mood}</strong>
+                    <p>{summarizeEntry(entry)}</p>
+                    <span>{entry.note}</span>
                   </div>
-                  <span>{item.day}</span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            </Panel>
+          </section>
+        ) : null}
 
-            <div className="summary-list">
-              {insightSignals.map((signal) => (
-                <div key={signal.label} className="summary-item">
-                  <div>
-                    <strong>{signal.label}</strong>
-                    <p>{signal.detail}</p>
+        {activeView === "patterns" ? (
+          <section className="dashboard-grid">
+            <Panel
+              eyebrow="Weekly insight"
+              title="Stress, sleep, and trigger breakdown"
+              icon={<ChartLine size={22} />}
+              className="panel-wide"
+            >
+              <div className="weekly-copy">
+                {analysis.weeklySummary.map((item) => (
+                  <p key={item}>{item}</p>
+                ))}
+              </div>
+
+              <div className="evidence-grid">
+                {Object.entries(analysis.triggerCounts).map(([key, value]) => (
+                  <div key={key} className="evidence-card">
+                    <span>{key.replace(/([A-Z])/g, " $1").replace(/^./, (letter) => letter.toUpperCase())}</span>
+                    <strong>{value}</strong>
                   </div>
-                  <span>{signal.value}</span>
+                ))}
+              </div>
+            </Panel>
+
+            <Panel
+              eyebrow="Pattern notes"
+              title="What the app can say safely"
+              icon={<ShieldCheck size={22} />}
+            >
+              <div className="checklist">
+                <div className="check-item">
+                  {analysis.issueStreak >= 3
+                    ? "Warning state is active because poor sleep or stress has stayed elevated for several days."
+                    : "Warning state is still stable because the current streak is under three days."}
                 </div>
-              ))}
-            </div>
-          </article>
-
-          <article className="panel">
-            <div className="panel-head">
-              <div>
-                <p className="subtle">Safety routing</p>
-                <h3>Parent alert logic</h3>
-              </div>
-              <ShieldCheck size={22} />
-            </div>
-
-            <div className="warning-card">
-              <p className="warning-title">{supportState.label}</p>
-              <p>{supportState.message}</p>
-            </div>
-
-            <div className="status-row">
-              <div>
-                <span>Stress above threshold</span>
-                <strong>4 days</strong>
-              </div>
-              <div>
-                <span>Poor sleep streak</span>
-                <strong>4 nights</strong>
-              </div>
-            </div>
-
-            <button type="button" className="ghost-button">
-              Notify parents when needed
-              <ArrowRight size={16} />
-            </button>
-          </article>
-
-          <article className="panel">
-            <div className="panel-head">
-              <div>
-                <p className="subtle">Support network</p>
-                <h3>Connect the student safely</h3>
-              </div>
-              <Users size={22} />
-            </div>
-
-            <div className="community-grid">
-              {communityCards.map((card) => (
-                <div key={card.title} className="community-card">
-                  <div className="community-meta">{card.meta}</div>
-                  <h4>{card.title}</h4>
-                  <p>{card.body}</p>
+                <div className="check-item">
+                  {analysis.topTriggerLabel
+                    ? `The strongest trigger is ${analysis.topTriggerLabel.toLowerCase()}, backed by the student’s own notes.`
+                    : "No trigger is labeled yet, so the app stays cautious about claims."}
                 </div>
-              ))}
-            </div>
+                <div className="check-item">
+                  {analysis.recommendation}
+                </div>
+              </div>
+            </Panel>
 
-            <div className="support-row support-row-tight">
-              <button type="button" className="support-button">
-                Join peer circle
+            <Panel
+              eyebrow="Evidence"
+              title="Recent trigger examples"
+              icon={<MoonStars size={22} />}
+            >
+              <div className="entry-list compact">
+                {Object.entries(analysis.triggerExamples).map(([key, values]) => (
+                  <div key={key} className="entry-card">
+                    <strong>{key}</strong>
+                    <p>{values.length ? values[0] : "No example yet"}</p>
+                  </div>
+                ))}
+              </div>
+            </Panel>
+          </section>
+        ) : null}
+
+        {activeView === "connect" ? (
+          <section className="dashboard-grid">
+            <Panel
+              eyebrow="Safety routing"
+              title="Parent warning and escalation"
+              icon={<WarningCircle size={22} />}
+            >
+              <div className="warning-card">
+                <p className="warning-title">{supportState.label}</p>
+                <p>{supportState.message}</p>
+              </div>
+
+              <div className="status-row">
+                <div>
+                  <span>Issue streak</span>
+                  <strong>{formatCounter(analysis.issueStreak, "day")}</strong>
+                </div>
+                <div>
+                  <span>Requests</span>
+                  <strong>{requestCount}</strong>
+                </div>
+              </div>
+
+              <button type="button" className="ghost-button" onClick={handleSendParentAlert}>
+                Queue parent alert
+                <ArrowRight size={16} />
               </button>
-              <button type="button" className="support-button">
-                Book therapist
+            </Panel>
+
+            <Panel
+              eyebrow="Peer support"
+              title="Connect with students for the same exam"
+              icon={<Users size={22} />}
+              className="panel-wide"
+            >
+              <div className="form-grid compact-grid">
+                <label className="field">
+                  <span>Exam group</span>
+                  <select value={peerExam} onChange={(event) => setPeerExam(event.target.value)}>
+                    {peerExamOptions.map((exam) => (
+                      <option key={exam}>{exam}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="field">
+                  <span>Peer note</span>
+                  <input
+                    type="text"
+                    value={peerNote}
+                    onChange={(event) => setPeerNote(event.target.value)}
+                    placeholder="Example: Need a calm mock-test review group."
+                  />
+                </label>
+              </div>
+
+              <div className="peer-grid">
+                {visiblePeerCircles.map((circle) => (
+                  <div key={circle.title} className="community-card">
+                    <div className="community-meta">{circle.members}</div>
+                    <h4>{circle.title}</h4>
+                    <p>{circle.summary}</p>
+                    <p className="community-footnote">Exam: {circle.exam}</p>
+                    <button type="button" className="support-button" onClick={() => handlePeerConnect(circle)}>
+                      Join circle
+                    </button>
+                  </div>
+                ))}
+                {!visiblePeerCircles.length ? (
+                  <div className="empty-state">
+                    No circles match this exam yet. Switch to another group or show all exams.
+                  </div>
+                ) : null}
+              </div>
+            </Panel>
+
+            <Panel
+              eyebrow="Therapist connect"
+              title="Request a professional session"
+              icon={<Stethoscope size={22} />}
+            >
+              <label className="field">
+                <span>What should the therapist know?</span>
+                <textarea
+                  rows="4"
+                  value={therapistNote}
+                  onChange={(event) => setTherapistNote(event.target.value)}
+                  placeholder="Example: Sleep has been poor for 4 days and comparison is making study harder."
+                />
+              </label>
+
+              <button type="button" className="primary-button full" onClick={handleTherapistConnect}>
+                Request therapist connect
               </button>
-            </div>
-          </article>
+            </Panel>
 
-          <article className="panel panel-wide">
-            <div className="panel-head">
-              <div>
-                <p className="subtle">Weekly update</p>
-                <h3>What changed and what to do next</h3>
+            <Panel
+              eyebrow="Support queue"
+              title="Requests and follow-ups"
+              icon={<PhoneCall size={22} />}
+            >
+              <div className="entry-list compact">
+                {requests.length ? (
+                  requests.slice(0, 5).map((request) => (
+                    <div key={request.id} className="entry-card">
+                      <strong>{request.title}</strong>
+                      <p>{request.detail}</p>
+                      <span>
+                        {request.type} · {request.status} · {request.createdAt}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="empty-state">
+                    No support requests yet. Trigger a peer, therapist, or parent action to see it here.
+                  </div>
+                )}
               </div>
-              <MoonStars size={22} />
-            </div>
-
-            <div className="weekly-copy">
-              {weeklySummary.map((item) => (
-                <p key={item}>{item}</p>
-              ))}
-            </div>
-
-            <div className="weekly-footer">
-              <div className="mini-stat">
-                <span>Best window</span>
-                <strong>7:00 PM - 9:00 PM</strong>
-              </div>
-              <div className="mini-stat">
-                <span>Primary trigger</span>
-                <strong>Comparison after mocks</strong>
-              </div>
-              <div className="mini-stat">
-                <span>Recommended fix</span>
-                <strong>Sleep earlier and reset</strong>
-              </div>
-            </div>
-          </article>
-
-          <article className="panel">
-            <div className="panel-head">
-              <div>
-                <p className="subtle">Core session</p>
-                <h3>Conversation flow</h3>
-              </div>
-              <ChatCircle size={22} />
-            </div>
-
-            <ol className="flow-list">
-              <li>Student shares a feeling, thought, or journaling entry.</li>
-              <li>Gemini extracts signals into structured fields.</li>
-              <li>Saathi answers with empathy, one insight, and one next step.</li>
-              <li>If risk stays high, the parent/therapist route appears.</li>
-            </ol>
-
-            <div className="session-footer">
-              <PhoneCall size={18} />
-              <span>Emergency support route stays visible when risk rises.</span>
-            </div>
-          </article>
-
-          <article className="panel">
-            <div className="panel-head">
-              <div>
-                <p className="subtle">Substance</p>
-                <h3>What makes this useful</h3>
-              </div>
-              <Heart size={22} />
-            </div>
-
-            <div className="checklist">
-              <div className="check-item">Code quality: componentized UI and deterministic logic</div>
-              <div className="check-item">Security: privacy-first wording and clear escalation gates</div>
-              <div className="check-item">Efficiency: static dataset, one-screen demo, fast build</div>
-              <div className="check-item">Accessibility: semantic headings, buttons, and contrast-first palette</div>
-            </div>
-          </article>
-        </section>
+            </Panel>
+          </section>
+        ) : null}
 
         <footer className="bottom-nav" aria-label="Primary navigation">
-          <button type="button" className="nav-item active">
+          <button
+            type="button"
+            className={`nav-item ${activeView === "today" ? "active" : ""}`}
+            onClick={() => setActiveView("today")}
+          >
             <House size={20} />
             <span>Today</span>
           </button>
-          <button type="button" className="nav-item">
+          <button
+            type="button"
+            className={`nav-item ${activeView === "patterns" ? "active" : ""}`}
+            onClick={() => setActiveView("patterns")}
+          >
+            <ChartLine size={20} />
+            <span>Patterns</span>
+          </button>
+          <button
+            type="button"
+            className={`nav-item ${activeView === "connect" ? "active" : ""}`}
+            onClick={() => setActiveView("connect")}
+          >
             <Users size={20} />
-            <span>Peers</span>
-          </button>
-          <button type="button" className="nav-item">
-            <Stethoscope size={20} />
-            <span>Therapy</span>
-          </button>
-          <button type="button" className="nav-item">
-            <MoonStars size={20} />
-            <span>Weekly</span>
+            <span>Connect</span>
           </button>
         </footer>
       </div>
+
+      {toast ? <div className="toast">{toast}</div> : null}
     </main>
+  );
+}
+
+export function resetPersistentStore() {
+  inMemoryStorage.clear();
+}
+
+function LockIcon() {
+  return (
+    <div className="lock-icon" aria-hidden="true">
+      <ShieldCheck size={20} />
+    </div>
   );
 }

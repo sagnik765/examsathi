@@ -7,11 +7,12 @@ ExamSathi is a hackathon-ready mental wellness tracker for students preparing fo
 
 ## What changed
 
-- Intimate, conversation-led support through the Saathi assistant.
-- Data-backed pattern explanations for comparison, late study, and poor sleep.
-- Parent warning logic that escalates after 3 days and turns critical after 7 days.
+- The static mock is now a stateful single-page app with live journal input, chat replies, support requests, and persistent local data.
+- Saathi responds to the student’s own logs instead of hardcoded copy, so the app stays grounded and avoids made-up patterns.
+- Parent warning logic escalates after 3 poor-signal days and turns critical after 7.
 - Peer connection for same-exam students and a path to a professional therapist.
-- Weekly stress summary with likely trigger windows and mitigation advice.
+- Weekly stress summary with trigger windows, likely causes, and mitigation advice.
+- The UI now uses a calmer mental-health-friendly palette and softer typography.
 
 ## Tech stack
 
@@ -19,13 +20,14 @@ ExamSathi is a hackathon-ready mental wellness tracker for students preparing fo
 - React 19
 - CSS
 - Phosphor icons
-- Vitest for the warning-threshold test
+- Vitest and Testing Library for interaction coverage
+- localStorage for lightweight persistence
 
 ## GenAI usage in the submission
 
-- Gemini: journaling analysis and signal extraction into structured stress, sleep, and trigger data.
-- Gemini structured output: consistent JSON for the weekly summary, warning state, and conversation insights.
-- Conversational AI layer: the Saathi assistant turns patterns into empathetic, context-aware responses.
+- The submission narrative is designed around Gemini structured output for journal analysis, stress-trigger extraction, and Saathi response planning.
+- The live demo intentionally uses a deterministic evidence-first analysis engine so it stays hallucination-free and only talks about patterns that are actually present in the student’s logs.
+- If you later wire a Gemini backend, the app already has the structured fields needed for it.
 
 ## Local run
 
