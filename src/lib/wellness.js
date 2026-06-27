@@ -543,6 +543,28 @@ const SCALE_KB = [
   },
 ];
 
+export function getScaleSignalCoverage(entries) {
+  const notes = entries
+    .map((entry) => `${entry.note || ""} ${entry.mood || ""}`.toLowerCase())
+    .join(" ");
+
+  return SCALE_KB.map((scale) => {
+    const matches = scale.items.filter((item) =>
+      item.keywords.some((keyword) => notes.includes(keyword.toLowerCase())),
+    );
+
+    return {
+      id: scale.id,
+      name: scale.name,
+      window: scale.window,
+      matchedItems: matches.length,
+      totalItems: scale.items.length,
+      coverage: Math.round((matches.length / scale.items.length) * 100),
+      evidence: matches.slice(0, 2).map((item) => item.prompt),
+    };
+  });
+}
+
 export const INITIAL_PROFILE = {
   name: "Aarav",
   exam: "JEE Main",

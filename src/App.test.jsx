@@ -8,6 +8,7 @@ import {
   analyzeWellness,
   buildSaathiReply,
   createSeedEntries,
+  getScaleSignalCoverage,
   getSupportState,
 } from "./lib/wellness.js";
 
@@ -24,6 +25,14 @@ describe("wellness analysis", () => {
     expect(state.label).toMatch(/warning/i);
     expect(analysis.topTriggerLabel).toBe("Comparison");
     expect(analysis.avgSleep).toBeLessThan(6.5);
+  });
+
+  it("reports scale evidence coverage without presenting a clinical score", () => {
+    const coverage = getScaleSignalCoverage(createSeedEntries());
+
+    expect(coverage).toHaveLength(3);
+    expect(coverage.find((scale) => scale.id === "pss10").matchedItems).toBeGreaterThan(0);
+    expect(coverage.every((scale) => scale.matchedItems <= scale.totalItems)).toBe(true);
   });
 });
 

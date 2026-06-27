@@ -22,6 +22,7 @@ import {
   createSeedMessages,
   createSeedRequests,
   formatDateRange,
+  getScaleSignalCoverage,
   getSupportState,
   getTimeWindowSeries,
   summarizeEntry,
@@ -238,6 +239,7 @@ export function App() {
   const analysis = useMemo(() => analyzeWellness(entries), [entries]);
   const supportState = useMemo(() => getSupportState(analysis), [analysis]);
   const timeline = useMemo(() => getTimeWindowSeries(analysis.recent), [analysis.recent]);
+  const scaleCoverage = useMemo(() => getScaleSignalCoverage(entries), [entries]);
   const peerExamOptions = useMemo(
     () => ["All exams", ...new Set(PEER_CIRCLES.map((circle) => circle.exam))],
     [],
@@ -757,6 +759,46 @@ export function App() {
                     <span>{key.replace(/([A-Z])/g, " $1").replace(/^./, (letter) => letter.toUpperCase())}</span>
                     <strong>{value}</strong>
                   </div>
+                ))}
+              </div>
+            </Panel>
+
+            <Panel
+              eyebrow="Conversational assessment"
+              title="Scale signals found in your own words"
+              icon={<ChatCircle size={22} />}
+              className="panel-wide"
+            >
+              <p className="assessment-note">
+                These are evidence-coverage indicators, not clinical scores or a diagnosis. A
+                complete assessment still requires every question and its frequency response.
+              </p>
+              <div className="scale-grid">
+                {scaleCoverage.map((scale) => (
+                  <article key={scale.id} className="scale-card">
+                    <div className="scale-card-head">
+                      <div>
+                        <p className="eyebrow">{scale.window}</p>
+                        <h4>{scale.name}</h4>
+                      </div>
+                      <strong>{scale.matchedItems}/{scale.totalItems}</strong>
+                    </div>
+                    <div
+                      className="coverage-track"
+                      role="progressbar"
+                      aria-label={`${scale.name} evidence coverage`}
+                      aria-valuenow={scale.coverage}
+                      aria-valuemin="0"
+                      aria-valuemax="100"
+                    >
+                      <span style={{ width: `${scale.coverage}%` }} />
+                    </div>
+                    <p>
+                      {scale.evidence.length
+                        ? `Possible signals: ${scale.evidence.join("; ")}.`
+                        : "No matching signal has been logged yet."}
+                    </p>
+                  </article>
                 ))}
               </div>
             </Panel>

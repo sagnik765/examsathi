@@ -423,6 +423,7 @@ input[type="range"] {
 .form-actions,
 .metric-grid,
 .peer-grid,
+.scale-grid,
 .evidence-grid,
 .status-row,
 .dashboard-grid,
@@ -735,6 +736,60 @@ input[type="range"] {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.assessment-note {
+  margin-bottom: 16px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.scale-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.scale-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 22px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.scale-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.scale-card h4 {
+  margin-top: 4px;
+  font-size: 1.15rem;
+}
+
+.scale-card p {
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.scale-card strong {
+  color: var(--accent-strong);
+}
+
+.coverage-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(47, 122, 112, 0.1);
+}
+
+.coverage-track span {
+  display: block;
+  height: 100%;
+  min-width: 4px;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
 .community-footnote {
   text-transform: none;
   letter-spacing: normal;
@@ -826,8 +881,9 @@ input[type="range"] {
   .form-grid,
   .form-actions,
   .status-row,
-  .evidence-grid,
-  .peer-grid {
+    .evidence-grid,
+    .scale-grid,
+    .peer-grid {
     grid-template-columns: 1fr;
   }
 
