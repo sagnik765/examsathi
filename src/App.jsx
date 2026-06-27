@@ -354,7 +354,7 @@ export function App() {
       type: "parent",
       title: supportState.label,
       detail: supportState.message,
-      status: "Queued",
+      status: "Pending",
       createdAt: new Date().toLocaleTimeString("en-IN", {
         hour: "numeric",
         minute: "2-digit",
@@ -362,7 +362,7 @@ export function App() {
     };
 
     setRequests((current) => [alertRequest, ...current]);
-    showToast("Parent alert queued in the support log.");
+    showToast("Parent alert prepared for review.");
   }
 
   function handlePeerConnect(circle) {
@@ -371,7 +371,7 @@ export function App() {
       type: "peer",
       title: circle.title,
       detail: `${circle.exam} · ${peerNote || "Peer support requested"}`,
-      status: "Queued",
+      status: "Pending",
       createdAt: new Date().toLocaleTimeString("en-IN", {
         hour: "numeric",
         minute: "2-digit",
@@ -380,7 +380,7 @@ export function App() {
 
     setRequests((current) => [request, ...current]);
     setPeerNote("");
-    showToast(`Peer circle request added for ${circle.exam}.`);
+    showToast(`Request to join the ${circle.exam} circle was saved.`);
   }
 
   function handleTherapistConnect() {
@@ -389,7 +389,7 @@ export function App() {
       type: "therapist",
       title: "Therapist connect",
       detail: therapistNote || "Confidential session requested.",
-      status: "Queued",
+      status: "Pending",
       createdAt: new Date().toLocaleTimeString("en-IN", {
         hour: "numeric",
         minute: "2-digit",
@@ -399,17 +399,6 @@ export function App() {
     setRequests((current) => [request, ...current]);
     setTherapistNote("");
     showToast("Therapist request added to the support queue.");
-  }
-
-  function resetDemoData() {
-    setEntries(createSeedEntries());
-    setMessages(createSeedMessages());
-    setRequests(createSeedRequests());
-    setJournalForm(INITIAL_JOURNAL_FORM);
-    setChatInput("");
-    setPeerNote("");
-    setTherapistNote("");
-    showToast("Demo data reset.");
   }
 
   const requestCount = requests.length;
@@ -484,10 +473,19 @@ export function App() {
               <span>{supportState.label}</span>
             </div>
             <div className="status-note">{supportState.message}</div>
-            <button type="button" className="ghost-button compact" onClick={resetDemoData}>
-              Reset demo
-              <ArrowRight size={16} />
-            </button>
+            <div className="account-row" aria-label="Signed-in profile and privacy status">
+              <div className="privacy-chip">
+                <ShieldCheck size={17} />
+                Private on this device
+              </div>
+              <div className="profile-chip" aria-label={`${INITIAL_PROFILE.name}, ${INITIAL_PROFILE.exam}`}>
+                <span>{INITIAL_PROFILE.name.slice(0, 1)}</span>
+                <div>
+                  <strong>{INITIAL_PROFILE.name}</strong>
+                  <small>{INITIAL_PROFILE.exam}</small>
+                </div>
+              </div>
+            </div>
           </div>
         </header>
 
@@ -879,7 +877,7 @@ export function App() {
                     <p>{circle.summary}</p>
                     <p className="community-footnote">Exam: {circle.exam}</p>
                     <button type="button" className="support-button" onClick={() => handlePeerConnect(circle)}>
-                      Join circle
+                      Request to join
                     </button>
                   </div>
                 ))}
@@ -937,7 +935,7 @@ export function App() {
               </div>
 
               <button type="button" className="ghost-button" onClick={handleSendParentAlert}>
-                Queue parent alert
+                Prepare parent alert
                 <ArrowRight size={16} />
               </button>
             </Panel>
@@ -969,6 +967,16 @@ export function App() {
           </section>
         ) : null}
 
+        <footer className="product-footer">
+          <div>
+            <strong>ExamSathi</strong>
+            <span>Private, evidence-aware support for exam preparation.</span>
+          </div>
+          <p>
+            ExamSathi supports reflection and early intervention; it does not provide a medical
+            diagnosis. In an emergency, contact local emergency services or a trusted adult.
+          </p>
+        </footer>
       </div>
 
       {toast ? <div className="toast">{toast}</div> : null}

@@ -87,9 +87,9 @@ describe("App interactions", () => {
     render(<App />);
 
     await user.click(screen.getAllByRole("button", { name: /^community$/i })[0]);
-    await user.click(screen.getAllByRole("button", { name: /join circle/i })[0]);
+    await user.click(screen.getAllByRole("button", { name: /request to join/i })[0]);
 
-    expect(screen.getByText(/peer circle request added/i)).toBeInTheDocument();
+    expect(screen.getByText(/request to join the jee main circle was saved/i)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /^safety$/i }));
     expect(screen.getByText(/peer support requested/i)).toBeInTheDocument();
   });
