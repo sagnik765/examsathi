@@ -827,6 +827,7 @@ export function App() {
               eyebrow="Evidence"
               title="Recent trigger examples"
               icon={<MoonStars size={22} />}
+              className="panel-full evidence-panel"
             >
               <div className="entry-list compact">
                 {Object.entries(analysis.triggerExamples).map(([key, values]) => (
