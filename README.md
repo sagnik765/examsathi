@@ -1,5 +1,8 @@
 # ExamSathi
 
+Public repo: https://github.com/sagnik765/examsathi
+Live demo: https://sagnik765.github.io/examsathi/
+
 ExamSathi is a hackathon-ready mental wellness tracker for students preparing for high-stakes exams like JEE, NEET, CAT, CUET, GATE, and UPSC.
 
 ## What changed
